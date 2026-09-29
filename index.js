@@ -80,6 +80,101 @@ async function connectToWhatsApp () {
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    // ─── RECEIVE INCOMING MESSAGES & REPLY WITH GEMINI AI ───
+    sock.ev.on('messages.upsert', async (m) => {
+        const msg = m.messages[0];
+        // Ignore if it's our own message or doesn't contain text
+        if (!msg.message || msg.key.fromMe) return;
+
+        const from = msg.key.remoteJid;
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+
+        if (text && !from.includes('@g.us')) { // Ignore group chats
+            console.log(`[Chat] Received message from ${from}: ${text}`);
+            
+            // Send typing indicator (optional, makes it look human)
+            await sock.sendPresenceUpdate('composing', from);
+            
+            // Get AI response
+            const aiReply = await getGeminiReply(text);
+            
+            // Send reply
+            await sock.sendMessage(from, { text: aiReply });
+            console.log(`[Chat] Replied to ${from}`);
+        }
+    });
+}
+
+// ─── GEMINI AI FUNCTION ───
+async function getGeminiReply(userMessage) {
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    const systemPrompt = `You are the official AI customer support assistant for **GKingtopup** — a trusted Nigerian VTU (Virtual Top-Up) platform.
+
+Your job is to:
+1. Answer questions about GKingtopup services (data bundles, airtime, electricity bills, cable TV, exam pins)
+2. Guide customers on how to register and buy services at https://gkingtopup.com.ng
+3. Teach resellers and sub-dealers how to grow their business and make more sales
+4. Advise customers on smart data management (how to save data, track usage, etc.)
+5. Handle complaints professionally and direct complex issues to support
+
+SERVICES & PRICING GUIDE:
+- MTN SME Data: Very cheap, ideal for resellers and sharing
+- Airtel, Glo, 9Mobile data bundles available
+- Airtime purchase for all networks at discount
+- DSTV, GOtv, Startimes subscription
+- EKEDC, IKEDC, AEDC electricity token
+- WAEC, NECO, JAMB, NABTEB exam pins
+- Recharge card printing (bulk pins)
+
+BUSINESS TIPS TO SHARE:
+- Resellers can buy data at wholesale price and sell to customers at retail
+- Share on WhatsApp status, Facebook groups, schools, hostels
+- Offer discounts to loyal customers to retain them
+- Create a price list and post it daily on social media
+- Partner with phone repair shops, cybercafes to sell to their customers
+
+DATA MANAGEMENT TIPS:
+- Turn off background app refresh to save data
+- Download videos for offline watching instead of streaming
+- Use lite versions of apps (Facebook Lite, YouTube Go)
+- Disconnect from WiFi when not using to avoid auto-updates draining mobile data
+
+RULES:
+- Always be friendly, helpful, and professional
+- Keep responses short and clear (WhatsApp messages)
+- Use emojis sparingly to be engaging
+- Always end with a call-to-action: guide them to visit https://gkingtopup.com.ng
+- If asked for pricing, direct them to the website as prices may change
+- If they have a technical issue with an order, tell them to contact support on the website
+- Respond in the same language the customer uses (English, Pidgin, Yoruba, Igbo, Hausa)
+- Never make up prices — always say "visit our website for current prices"
+
+WEBSITE: https://gkingtopup.com.ng
+SUPPORT: Available on the website chat`;
+
+    try {
+        // Fetch is built-in for Node 18+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                system_instruction: { parts: [{ text: systemPrompt }] },
+                contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+                generationConfig: { maxOutputTokens: 400, temperature: 0.7 }
+            })
+        });
+
+        const data = await response.json();
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!reply) throw new Error("Empty reply from Gemini");
+        return reply.trim();
+        
+    } catch (error) {
+        console.error("[Gemini Error]:", error);
+        return "Hi! 👋 Thanks for reaching out to GKingtopup. Our AI is taking a short break. Please visit https://gkingtopup.com.ng or try again in a moment!";
+    }
 }
 
 // Health check to keep bot alive
