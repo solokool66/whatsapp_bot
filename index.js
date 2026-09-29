@@ -3,6 +3,7 @@ const pino = require('pino');
 const express = require('express');
 const cors = require('cors');
 const qrcode = require('qrcode-terminal');
+const https = require('https');
 
 const app = express();
 app.use(express.json());
@@ -154,20 +155,47 @@ WEBSITE: https://gkingtopup.com.ng
 SUPPORT: Available on the website chat`;
 
     try {
-        // Fetch is built-in for Node 18+
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                system_instruction: { parts: [{ text: systemPrompt }] },
-                contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-                generationConfig: { maxOutputTokens: 400, temperature: 0.7 }
-            })
+        if (!GEMINI_API_KEY) {
+            console.error("[Gemini Error]: GEMINI_API_KEY is missing from Environment Variables!");
+            throw new Error("Missing API Key");
+        }
+
+        const payload = JSON.stringify({
+            system_instruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+            generationConfig: { maxOutputTokens: 400, temperature: 0.7 }
         });
 
-        const data = await response.json();
-        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        
+        const options = {
+            hostname: 'generativelanguage.googleapis.com',
+            port: 443,
+            path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload)
+            }
+        };
+
+        const reply = await new Promise((resolve, reject) => {
+            const req = https.request(options, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.error) return reject(parsed.error.message);
+                        resolve(parsed.candidates?.[0]?.content?.parts?.[0]?.text);
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+            });
+            req.on('error', reject);
+            req.write(payload);
+            req.end();
+        });
+
         if (!reply) throw new Error("Empty reply from Gemini");
         return reply.trim();
         
