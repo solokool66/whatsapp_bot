@@ -349,18 +349,36 @@ async function connectToWhatsApp () {
     // ─── RECEIVE INCOMING MESSAGES ───
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
-        if (!msg.message || msg.key.fromMe) return;
+        if (!msg.message) return;
 
         const from = msg.key.remoteJid;
+
+        // If the message was sent BY the bot owner (you, the human)
+        if (msg.key.fromMe) {
+            const session = userSessions.get(from) || { state: 'ai' };
+            // Mute the bot for 1 hour (60 mins) for this specific person
+            session.mutedUntil = Date.now() + (60 * 60 * 1000); 
+            userSessions.set(from, session);
+            console.log(`[Chat] Human took over chat with ${from}. Bot muted for 1 hour.`);
+            return;
+        }
+
         const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
 
         // Ignore empty messages, group chats, and WhatsApp status broadcasts
         if (!text || from.includes('@g.us') || from.includes('status@broadcast') || from === 'status@broadcast') return;
 
+        const session = userSessions.get(from) || { state: 'ai' };
+
+        // Check if the bot is currently muted for this user (because you are chatting with them)
+        if (session.mutedUntil && Date.now() < session.mutedUntil) {
+            console.log(`[Chat] Bot is muted for ${from}. Ignoring message.`);
+            return;
+        }
+
         console.log(`[Chat] Received message from ${from}: ${text}`);
 
         const lower = text.toLowerCase();
-        const session = userSessions.get(from) || { state: 'ai' };
 
         // Only allow explicit "menu" command to show the rigid menu
         if (lower === 'menu') {
