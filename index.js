@@ -201,7 +201,7 @@ SUPPORT: Available on the website chat`;
         
     } catch (error) {
         console.error("[Gemini Error]:", error);
-        return "Hi! 👋 Thanks for reaching out to GKingtopup. Our AI is taking a short break. Please visit https://gkingtopup.com.ng or try again in a moment!";
+        return `[DEBUG]: ${error.toString()}`;
     }
 }
 
