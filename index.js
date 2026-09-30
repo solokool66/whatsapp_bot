@@ -356,10 +356,10 @@ async function connectToWhatsApp () {
         // If the message was sent BY the bot owner (you, the human)
         if (msg.key.fromMe) {
             const session = userSessions.get(from) || { state: 'ai' };
-            // Mute the bot for 1 hour (60 mins) for this specific person
-            session.mutedUntil = Date.now() + (60 * 60 * 1000); 
+            // Mute the bot for 5 minutes for this specific person
+            session.mutedUntil = Date.now() + (5 * 60 * 1000); 
             userSessions.set(from, session);
-            console.log(`[Chat] Human took over chat with ${from}. Bot muted for 1 hour.`);
+            console.log(`[Chat] Human took over chat with ${from}. Bot muted for 5 mins.`);
             return;
         }
 
