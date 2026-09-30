@@ -356,10 +356,12 @@ async function connectToWhatsApp () {
         // If the message was sent BY the bot owner (you, the human)
         if (msg.key.fromMe) {
             const session = userSessions.get(from) || { state: 'ai' };
-            // Mute the bot for 5 minutes for this specific person
-            session.mutedUntil = Date.now() + (5 * 60 * 1000); 
-            userSessions.set(from, session);
-            console.log(`[Chat] Human took over chat with ${from}. Bot muted for 5 mins.`);
+            if (!session.isAiSending) {
+                // Mute the bot for 5 minutes for this specific person
+                session.mutedUntil = Date.now() + (5 * 60 * 1000); 
+                userSessions.set(from, session);
+                console.log(`[Chat] Human took over chat with ${from}. Bot muted for 5 mins.`);
+            }
             return;
         }
 
@@ -418,15 +420,21 @@ async function connectToWhatsApp () {
         try {
             const aiReply = await getGeminiReply(session.history);
             session.history.push({ role: 'model', parts: [{ text: aiReply }] });
+            
+            session.isAiSending = true; // Prevent bot from muting itself
             userSessions.set(from, session);
             await sock.sendMessage(from, { text: aiReply + '\n\n🤖' });
+            setTimeout(() => { session.isAiSending = false; }, 3000);
+            
             console.log(`[Chat] Replied to ${from} using AI`);
         } catch (e) {
             console.error(`[Chat] AI Error for ${from}:`, e.message || e);
-            // If it crashes (e.g. rate limit), clear history so it's not stuck
             session.history = [];
+            
+            session.isAiSending = true;
             userSessions.set(from, session);
             await sock.sendMessage(from, { text: "Hi! 👋 Thanks for reaching out to GKingtopup. Our AI is taking a short break. Please visit https://gkingtopup.com.ng or try again in a moment!\n\n🤖" });
+            setTimeout(() => { session.isAiSending = false; }, 3000);
         }
     });
 }
