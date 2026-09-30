@@ -181,33 +181,33 @@ async function handleMainMenu(from, text) {
     switch (choice) {
         case '1':
             await sock.sendMessage(from, { text: `📝 *Create Your Account*\n━━━━━━━━━━━━━━━━━━━━━\nRegister in seconds and start buying data, airtime & more!\n\n👉 https://gkingtopup.com.ng/auth/register.php\n\nReply *menu* to go back.` });
-            break;
+            return true;
         case '2':
             await sock.sendMessage(from, { text: `🔐 *Login to Your Account*\n━━━━━━━━━━━━━━━━━━━━━\nAccess your GKingtopup dashboard:\n\n👉 https://gkingtopup.com.ng/auth/login.php\n\nReply *menu* to go back.` });
-            break;
+            return true;
         case '3':
             await sock.sendMessage(from, { text: `💳 *Fund Your Wallet*\n━━━━━━━━━━━━━━━━━━━━━\n1. Log in to your account\n2. Click "Fund Wallet"\n3. Choose amount & pay via Paystack\n4. Wallet credited instantly! ✅\n\n👉 https://gkingtopup.com.ng\n\nReply *menu* to go back.` });
-            break;
+            return true;
         case '4':
             userSessions.set(from, { state: 'services_menu' });
             await sendMenu(from, SERVICES_MENU);
-            break;
+            return true;
         case '5':
             await sock.sendMessage(from, { text: `📋 *Check Transaction Status*\n━━━━━━━━━━━━━━━━━━━━━\nTo check your order:\n\n1. Log in at gkingtopup.com.ng\n2. Go to "Transaction History"\n3. Find your order and check status\n\nIf you have issues, reply *7* to chat with an agent.\n\nReply *menu* to go back.` });
-            break;
+            return true;
         case '6':
             userSessions.set(from, { state: 'faqs_menu' });
             await sendMenu(from, FAQS_MENU);
-            break;
+            return true;
         case '7':
             await connectToAgent(from);
-            break;
+            return true;
         case '0':
             userSessions.set(from, { state: 'ai' });
             await sock.sendMessage(from, { text: `🤖 *AI Assistant Mode*\n━━━━━━━━━━━━━━━━━━━━━\nYou can now ask me anything about GKingtopup!\n\nType *menu* anytime to return to the main menu.` });
-            break;
+            return true;
         default:
-            await sendMenu(from, MAIN_MENU);
+            return false; // Not a valid menu choice, let AI handle it
     }
 }
 
@@ -224,10 +224,12 @@ async function handleServicesMenu(from, text) {
     if (text === '0') {
         userSessions.set(from, { state: 'main_menu' });
         await sendMenu(from, MAIN_MENU);
+        return true;
     } else if (links[text]) {
         await sock.sendMessage(from, { text: `${names[text]}\n━━━━━━━━━━━━━━━━━━━━━\nTo purchase, please visit:\n\n👉 ${links[text]}\n\nNote: Prices are always up-to-date on the website.\n\nReply *menu* to go back.` });
+        return true;
     } else {
-        await sendMenu(from, SERVICES_MENU);
+        return false;
     }
 }
 
@@ -235,10 +237,12 @@ async function handleFAQsMenu(from, text) {
     if (text === '0') {
         userSessions.set(from, { state: 'main_menu' });
         await sendMenu(from, MAIN_MENU);
+        return true;
     } else if (FAQS_ANSWERS[text]) {
         await sock.sendMessage(from, { text: FAQS_ANSWERS[text] });
+        return true;
     } else {
-        await sendMenu(from, FAQS_MENU);
+        return false;
     }
 }
 
@@ -358,83 +362,65 @@ async function connectToWhatsApp () {
         const lower = text.toLowerCase();
         const session = userSessions.get(from) || { state: 'ai' };
 
-        // Always allow "menu" or "hi/hello/start" to show the main menu
-        if (['menu', 'hi', 'hello', 'start', 'hey'].includes(lower)) {
+        // Only allow explicit "menu" command to show the rigid menu
+        if (lower === 'menu') {
             userSessions.set(from, { state: 'main_menu' });
             await sendMenu(from, MAIN_MENU);
             return;
         }
 
-        // Route based on session state
+        // Route based on session state, if it's a menu, try to handle it
+        let handledByMenu = false;
         if (session.state === 'main_menu') {
-            await handleMainMenu(from, text);
-            return;
+            handledByMenu = await handleMainMenu(from, text);
+        } else if (session.state === 'services_menu') {
+            handledByMenu = await handleServicesMenu(from, text);
+        } else if (session.state === 'faqs_menu') {
+            handledByMenu = await handleFAQsMenu(from, text);
         }
 
-        if (session.state === 'services_menu') {
-            await handleServicesMenu(from, text);
-            return;
-        }
+        // If the user typed a valid menu number, stop here.
+        if (handledByMenu) return;
 
-        if (session.state === 'faqs_menu') {
-            await handleFAQsMenu(from, text);
-            return;
-        }
-
-        // Default: AI Assistant mode
+        // Otherwise, it's a natural message. Let the AI handle it!
+        userSessions.set(from, { state: 'ai' }); 
+        
         await sock.sendPresenceUpdate('composing', from);
         const aiReply = await getGeminiReply(text);
-        await sock.sendMessage(from, { text: aiReply });
-        console.log(`[Chat] Replied to ${from}`);
+        await sock.sendMessage(from, { text: aiReply + '\n\n✨ _GKingtopup AI_' });
+        console.log(`[Chat] Replied to ${from} using AI`);
     });
 }
 
 // ─── GEMINI AI FUNCTION ───
 async function getGeminiReply(userMessage) {
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    const systemPrompt = `You are the official AI customer support assistant for **GKingtopup** — a trusted Nigerian VTU (Virtual Top-Up) platform.
+    const systemPrompt = `You are the official AI customer support assistant for **GKingtopup** — a trusted Nigerian VTU platform for Data, Airtime, Cable TV, and Bills.
 
-Your job is to:
-1. Answer questions about GKingtopup services (data bundles, airtime, electricity bills, cable TV, exam pins)
-2. Guide customers on how to register and buy services at https://gkingtopup.com.ng
-3. Teach resellers and sub-dealers how to grow their business and make more sales
-4. Advise customers on smart data management (how to save data, track usage, etc.)
-5. Handle complaints professionally and direct complex issues to support
+YOUR PERSONA & TONE:
+- Be extremely warm, cordial, and professional. Always start by greeting the customer warmly if they say hi/hello (e.g., "Good day! Welcome to GKingtopup. How can I assist you today?").
+- Show empathy when a customer complains. (e.g., "I'm so sorry to hear that your funding hasn't reflected yet", or "I apologize for the failed transaction").
+- Keep responses relatively short, clear, and perfectly formatted for WhatsApp.
+- Do not sound like a rigid robot. Sound like a friendly human customer support agent.
 
-SERVICES & PRICING GUIDE:
-- MTN SME Data: Very cheap, ideal for resellers and sharing
-- Airtel, Glo, 9Mobile data bundles available
-- Airtime purchase for all networks at discount
-- DSTV, GOtv, Startimes subscription
-- EKEDC, IKEDC, AEDC electricity token
-- WAEC, NECO, JAMB, NABTEB exam pins
-- Recharge card printing (bulk pins)
+HOW TO HANDLE ISSUES:
+1. Failed Funding / Deposit not reflecting (e.g., Kuda, Moniepoint):
+   - Apologize for the delay and explain that sometimes bank network issues cause delays.
+   - Ask them to provide their **registered email address** and a **screenshot of the successful transaction debit**.
+   - Tell them once they provide those, you will connect them with the technical team to resolve it immediately.
 
-BUSINESS TIPS TO SHARE:
-- Resellers can buy data at wholesale price and sell to customers at retail
-- Share on WhatsApp status, Facebook groups, schools, hostels
-- Offer discounts to loyal customers to retain them
-- Create a price list and post it daily on social media
-- Partner with phone repair shops, cybercafes to sell to their customers
+2. Failed Data / Airtime / MTN Transactions:
+   - Explain that transactions usually fail due to general network instability from the provider (e.g., MTN), or if the number isn't linked to a NIN.
+   - Ask if they are having trouble with a specific phone number right now.
 
-DATA MANAGEMENT TIPS:
-- Turn off background app refresh to save data
-- Download videos for offline watching instead of streaming
-- Use lite versions of apps (Facebook Lite, YouTube Go)
-- Disconnect from WiFi when not using to avoid auto-updates draining mobile data
+3. General Questions (What do you do?):
+   - Explain that GKingtopup offers cheap Data bundles (MTN SME, Airtel, Glo, 9mobile), Airtime, Electricity tokens, Cable TV subs, and Exam Pins.
+   - Give them the website link: https://gkingtopup.com.ng and encourage them to register.
 
 RULES:
-- Always be friendly, helpful, and professional
-- Keep responses short and clear (WhatsApp messages)
-- Use emojis sparingly to be engaging
-- Always end with a call-to-action: guide them to visit https://gkingtopup.com.ng
-- If asked for pricing, direct them to the website as prices may change
-- If they have a technical issue with an order, tell them to contact support on the website
-- Respond in the same language the customer uses (English, Pidgin, Yoruba, Igbo, Hausa)
-- Never make up prices — always say "visit our website for current prices"
-
-WEBSITE: https://gkingtopup.com.ng
-SUPPORT: Available on the website chat`;
+- Never make up prices. If they ask for prices, tell them to log in to the website to see the updated price list.
+- If a user sends a screenshot or an email address, tell them: "Thank you! I've forwarded this to our human support team. An agent will attend to you shortly."
+- Always guide them gently. Tell them they can also type "menu" at any time to see the automated services menu.`;
 
     try {
         if (!GEMINI_API_KEY) {
