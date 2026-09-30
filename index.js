@@ -383,17 +383,31 @@ async function connectToWhatsApp () {
         if (handledByMenu) return;
 
         // Otherwise, it's a natural message. Let the AI handle it!
-        userSessions.set(from, { state: 'ai' }); 
+        if (session.state !== 'ai') {
+            session.state = 'ai';
+            session.history = []; // Clear history when entering AI mode
+        }
+        if (!session.history) session.history = [];
+        
+        session.history.push({ role: 'user', parts: [{ text: text }] });
+        // Keep only the last 6 messages (3 conversational turns) to avoid blowing up token limits
+        if (session.history.length > 6) session.history = session.history.slice(-6);
+        
+        userSessions.set(from, session);
         
         await sock.sendPresenceUpdate('composing', from);
-        const aiReply = await getGeminiReply(text);
+        const aiReply = await getGeminiReply(session.history);
+        
+        session.history.push({ role: 'model', parts: [{ text: aiReply }] });
+        userSessions.set(from, session);
+
         await sock.sendMessage(from, { text: aiReply + '\n\n🤖' });
         console.log(`[Chat] Replied to ${from} using AI`);
     });
 }
 
 // ─── GEMINI AI FUNCTION ───
-async function getGeminiReply(userMessage) {
+async function getGeminiReply(historyArray) {
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
     const systemPrompt = `You are the official AI customer support assistant for **GKingtopup** — a trusted Nigerian VTU platform for Data, Airtime, Cable TV, and Bills.
 
@@ -430,7 +444,7 @@ RULES:
 
         const payload = JSON.stringify({
             system_instruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+            contents: historyArray,
             generationConfig: { maxOutputTokens: 400, temperature: 0.7 }
         });
 
