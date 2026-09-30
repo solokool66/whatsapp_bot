@@ -363,10 +363,14 @@ async function connectToWhatsApp () {
             return;
         }
 
-        const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
+        const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '').trim();
 
-        // Ignore empty messages, group chats, and WhatsApp status broadcasts
+        // Ignore group chats and WhatsApp status broadcasts
         if (!text || from.includes('@g.us') || from.includes('status@broadcast') || from === 'status@broadcast') return;
+
+        const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '').trim();
+
+        if (!text) return;
 
         const session = userSessions.get(from) || { state: 'ai' };
 
@@ -505,13 +509,20 @@ RULES:
                 res.on('end', () => {
                     try {
                         const parsed = JSON.parse(data);
-                        if (parsed.error) return reject(parsed.error.message);
+                        if (parsed.error) return reject(new Error(parsed.error.message));
                         resolve(parsed.candidates?.[0]?.content?.parts?.[0]?.text);
                     } catch (e) {
                         reject(e);
                     }
                 });
             });
+            
+            // Add a 15-second timeout so it never hangs silently if Google is slow
+            req.setTimeout(15000, () => {
+                req.destroy();
+                reject(new Error("Gemini API timeout"));
+            });
+            
             req.on('error', reject);
             req.write(payload);
             req.end();
