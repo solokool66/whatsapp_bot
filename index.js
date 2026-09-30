@@ -414,13 +414,20 @@ async function connectToWhatsApp () {
         userSessions.set(from, session);
         
         await sock.sendPresenceUpdate('composing', from);
-        const aiReply = await getGeminiReply(session.history);
         
-        session.history.push({ role: 'model', parts: [{ text: aiReply }] });
-        userSessions.set(from, session);
-
-        await sock.sendMessage(from, { text: aiReply + '\n\n🤖' });
-        console.log(`[Chat] Replied to ${from} using AI`);
+        try {
+            const aiReply = await getGeminiReply(session.history);
+            session.history.push({ role: 'model', parts: [{ text: aiReply }] });
+            userSessions.set(from, session);
+            await sock.sendMessage(from, { text: aiReply + '\n\n🤖' });
+            console.log(`[Chat] Replied to ${from} using AI`);
+        } catch (e) {
+            console.error(`[Chat] AI Error for ${from}:`, e.message || e);
+            // If it crashes (e.g. rate limit), clear history so it's not stuck
+            session.history = [];
+            userSessions.set(from, session);
+            await sock.sendMessage(from, { text: "Hi! 👋 Thanks for reaching out to GKingtopup. Our AI is taking a short break. Please visit https://gkingtopup.com.ng or try again in a moment!\n\n🤖" });
+        }
     });
 }
 
@@ -460,9 +467,23 @@ RULES:
             throw new Error("Missing API Key");
         }
 
+        // Gemini strictly requires alternating user/model roles. Compress duplicates.
+        let compressedHistory = [];
+        for (const msg of historyArray) {
+            if (compressedHistory.length > 0 && compressedHistory[compressedHistory.length - 1].role === msg.role) {
+                compressedHistory[compressedHistory.length - 1].parts[0].text += '\n' + msg.parts[0].text;
+            } else {
+                compressedHistory.push({ role: msg.role, parts: [{ text: msg.parts[0].text }] });
+            }
+        }
+        // First message MUST be from user
+        if (compressedHistory.length > 0 && compressedHistory[0].role !== 'user') {
+            compressedHistory.shift();
+        }
+
         const payload = JSON.stringify({
             system_instruction: { parts: [{ text: systemPrompt }] },
-            contents: historyArray,
+            contents: compressedHistory,
             generationConfig: { maxOutputTokens: 400, temperature: 0.7 }
         });
 
