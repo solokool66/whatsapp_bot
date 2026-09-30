@@ -368,10 +368,6 @@ async function connectToWhatsApp () {
         // Ignore group chats and WhatsApp status broadcasts
         if (!text || from.includes('@g.us') || from.includes('status@broadcast') || from === 'status@broadcast') return;
 
-        const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '').trim();
-
-        if (!text) return;
-
         const session = userSessions.get(from) || { state: 'ai' };
 
         // Check if the bot is currently muted for this user (because you are chatting with them)
