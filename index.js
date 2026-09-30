@@ -12,8 +12,196 @@ app.use(cors());
 let sock;
 let isReady = false;
 
-// Queue system to prevent WhatsApp spam bans
-const messageQueue = [];
+// ─── USER SESSION STATE ───
+const userSessions = new Map();
+
+// ─── MENU TEMPLATES ───
+const AGENT_NUMBER = '2347067154646'; // Agent WhatsApp number
+
+const MAIN_MENU = `🏠 *GKingtopup - Main Menu*
+━━━━━━━━━━━━━━━━━━━━━
+Welcome! How can we help you today?
+
+1️⃣  Create Account
+2️⃣  Login to My Account
+3️⃣  Fund My Wallet
+4️⃣  Buy Data / Airtime / Bills
+5️⃣  Check Transaction Status
+6️⃣  FAQs
+7️⃣  💬 Chat with Live Agent
+0️⃣  🤖 Ask AI Assistant
+
+━━━━━━━━━━━━━━━━━━━━━
+Reply with a number to continue
+🌐 gkingtopup.com.ng`;
+
+const SERVICES_MENU = `📱 *Buy Services*
+━━━━━━━━━━━━━━━━━━━━━
+What would you like to buy?
+
+1️⃣  📶 Data Bundle (MTN, Airtel, Glo, 9mobile)
+2️⃣  📞 Airtime (All Networks)
+3️⃣  📺 Cable TV (DSTV / GOtv / Startimes)
+4️⃣  💡 Electricity Token
+5️⃣  📝 Exam Pin (WAEC / NECO / JAMB)
+
+0️⃣  🔙 Back to Main Menu
+━━━━━━━━━━━━━━━━━━━━━
+🌐 gkingtopup.com.ng`;
+
+const FAQS_MENU = `❓ *Frequently Asked Questions*
+━━━━━━━━━━━━━━━━━━━━━
+
+1️⃣  How do I fund my wallet?
+2️⃣  Is data delivery instant?
+3️⃣  How do I become a reseller?
+4️⃣  Payment failed but money deducted?
+5️⃣  How do I reset my password?
+
+0️⃣  🔙 Back to Main Menu`;
+
+const FAQS_ANSWERS = {
+    '1': `💳 *How to Fund Your Wallet*
+━━━━━━━━━━━━━━━━━━━━━
+1. Log in at gkingtopup.com.ng
+2. Click "Fund Wallet"
+3. Enter amount & choose payment method
+4. Complete payment via Paystack
+5. Wallet is credited instantly! ✅
+
+Reply *0* for Main Menu`,
+
+    '2': `⚡ *Data Delivery*
+━━━━━━━━━━━━━━━━━━━━━
+Yes! All data purchases are delivered *instantly* after payment is confirmed.
+
+If you don't receive within 2 minutes, please contact support.
+
+Reply *0* for Main Menu`,
+
+    '3': `💼 *Become a Reseller*
+━━━━━━━━━━━━━━━━━━━━━
+Join our reseller program and earn daily!
+
+✅ Buy data at wholesale prices
+✅ Sell at your own profit margin
+✅ No registration fee
+✅ Instant delivery for your customers
+
+Register at: gkingtopup.com.ng
+Then upgrade your account to Reseller.
+
+Reply *0* for Main Menu`,
+
+    '4': `⚠️ *Payment Failed / Money Deducted*
+━━━━━━━━━━━━━━━━━━━━━
+Don't panic! Here's what to do:
+
+1. Check your transaction history on the site
+2. If money was deducted but no data received, wait 5 minutes — it often auto-reverses
+3. If issue persists after 10 minutes, contact our support team with your transaction ID
+
+Reply *7* to chat with a live agent
+Reply *0* for Main Menu`,
+
+    '5': `🔑 *Reset Your Password*
+━━━━━━━━━━━━━━━━━━━━━
+1. Go to gkingtopup.com.ng
+2. Click "Login"
+3. Click "Forgot Password?"
+4. Enter your email address
+5. Check your email for reset link ✅
+
+Reply *0* for Main Menu`
+};
+
+async function sendMenu(jid, menuText) {
+    await sock.sendMessage(jid, { text: menuText });
+}
+
+async function handleMainMenu(from, text) {
+    const choice = text.trim();
+    switch (choice) {
+        case '1':
+            await sock.sendMessage(from, { text: `📝 *Create Your Account*\n━━━━━━━━━━━━━━━━━━━━━\nRegister in seconds and start buying data, airtime & more!\n\n👉 https://gkingtopup.com.ng/auth/register.php\n\nReply *menu* to go back.` });
+            break;
+        case '2':
+            await sock.sendMessage(from, { text: `🔐 *Login to Your Account*\n━━━━━━━━━━━━━━━━━━━━━\nAccess your GKingtopup dashboard:\n\n👉 https://gkingtopup.com.ng/auth/login.php\n\nReply *menu* to go back.` });
+            break;
+        case '3':
+            await sock.sendMessage(from, { text: `💳 *Fund Your Wallet*\n━━━━━━━━━━━━━━━━━━━━━\n1. Log in to your account\n2. Click "Fund Wallet"\n3. Choose amount & pay via Paystack\n4. Wallet credited instantly! ✅\n\n👉 https://gkingtopup.com.ng\n\nReply *menu* to go back.` });
+            break;
+        case '4':
+            userSessions.set(from, { state: 'services_menu' });
+            await sendMenu(from, SERVICES_MENU);
+            break;
+        case '5':
+            await sock.sendMessage(from, { text: `📋 *Check Transaction Status*\n━━━━━━━━━━━━━━━━━━━━━\nTo check your order:\n\n1. Log in at gkingtopup.com.ng\n2. Go to "Transaction History"\n3. Find your order and check status\n\nIf you have issues, reply *7* to chat with an agent.\n\nReply *menu* to go back.` });
+            break;
+        case '6':
+            userSessions.set(from, { state: 'faqs_menu' });
+            await sendMenu(from, FAQS_MENU);
+            break;
+        case '7':
+            await connectToAgent(from);
+            break;
+        case '0':
+            userSessions.set(from, { state: 'ai' });
+            await sock.sendMessage(from, { text: `🤖 *AI Assistant Mode*\n━━━━━━━━━━━━━━━━━━━━━\nYou can now ask me anything about GKingtopup!\n\nType *menu* anytime to return to the main menu.` });
+            break;
+        default:
+            await sendMenu(from, MAIN_MENU);
+    }
+}
+
+async function handleServicesMenu(from, text) {
+    const links = {
+        '1': 'https://gkingtopup.com.ng (Login → Buy Data)',
+        '2': 'https://gkingtopup.com.ng (Login → Buy Airtime)',
+        '3': 'https://gkingtopup.com.ng (Login → Cable TV)',
+        '4': 'https://gkingtopup.com.ng (Login → Electricity)',
+        '5': 'https://gkingtopup.com.ng (Login → Exam Pins)',
+    };
+    const names = { '1': '📶 Data Bundle', '2': '📞 Airtime', '3': '📺 Cable TV', '4': '💡 Electricity Token', '5': '📝 Exam Pin' };
+
+    if (text === '0') {
+        userSessions.set(from, { state: 'main_menu' });
+        await sendMenu(from, MAIN_MENU);
+    } else if (links[text]) {
+        await sock.sendMessage(from, { text: `${names[text]}\n━━━━━━━━━━━━━━━━━━━━━\nTo purchase, please visit:\n\n👉 ${links[text]}\n\nNote: Prices are always up-to-date on the website.\n\nReply *menu* to go back.` });
+    } else {
+        await sendMenu(from, SERVICES_MENU);
+    }
+}
+
+async function handleFAQsMenu(from, text) {
+    if (text === '0') {
+        userSessions.set(from, { state: 'main_menu' });
+        await sendMenu(from, MAIN_MENU);
+    } else if (FAQS_ANSWERS[text]) {
+        await sock.sendMessage(from, { text: FAQS_ANSWERS[text] });
+    } else {
+        await sendMenu(from, FAQS_MENU);
+    }
+}
+
+async function connectToAgent(from) {
+    const customerPhone = from.replace('@s.whatsapp.net', '').replace('@lid', '');
+    
+    // Notify the agent
+    const agentJid = `${AGENT_NUMBER}@s.whatsapp.net`;
+    await sock.sendMessage(agentJid, {
+        text: `🔔 *New Customer Support Request*\n━━━━━━━━━━━━━━━━━━━━━\nA customer needs your help!\n📱 Customer Number: +${customerPhone}\n\nPlease reach out to them directly on WhatsApp.`
+    });
+
+    // Tell the customer
+    userSessions.set(from, { state: 'agent', agentMode: true });
+    await sock.sendMessage(from, {
+        text: `✅ *Connecting you to a Live Agent*\n━━━━━━━━━━━━━━━━━━━━━\nOur agent has been notified and will contact you shortly on this WhatsApp!\n\n⏱ Expected response time: a few minutes\n\nYou can also reach the agent directly:\n👉 https://wa.me/${AGENT_NUMBER}\n\nType *menu* anytime to return to the main menu.`
+    });
+}
+
+
 let isProcessingQueue = false;
 
 async function processQueue() {
@@ -82,28 +270,49 @@ async function connectToWhatsApp () {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // ─── RECEIVE INCOMING MESSAGES & REPLY WITH GEMINI AI ───
+    // ─── RECEIVE INCOMING MESSAGES ───
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
-        // Ignore if it's our own message or doesn't contain text
         if (!msg.message || msg.key.fromMe) return;
 
         const from = msg.key.remoteJid;
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+        const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
 
-        if (text && !from.includes('@g.us')) { // Ignore group chats
-            console.log(`[Chat] Received message from ${from}: ${text}`);
-            
-            // Send typing indicator (optional, makes it look human)
-            await sock.sendPresenceUpdate('composing', from);
-            
-            // Get AI response
-            const aiReply = await getGeminiReply(text);
-            
-            // Send reply
-            await sock.sendMessage(from, { text: aiReply });
-            console.log(`[Chat] Replied to ${from}`);
+        if (!text || from.includes('@g.us')) return; // Ignore empty or group messages
+
+        console.log(`[Chat] Received message from ${from}: ${text}`);
+
+        const lower = text.toLowerCase();
+        const session = userSessions.get(from) || { state: 'ai' };
+
+        // Always allow "menu" or "hi/hello/start" to show the main menu
+        if (['menu', 'hi', 'hello', 'start', 'hey'].includes(lower)) {
+            userSessions.set(from, { state: 'main_menu' });
+            await sendMenu(from, MAIN_MENU);
+            return;
         }
+
+        // Route based on session state
+        if (session.state === 'main_menu') {
+            await handleMainMenu(from, text);
+            return;
+        }
+
+        if (session.state === 'services_menu') {
+            await handleServicesMenu(from, text);
+            return;
+        }
+
+        if (session.state === 'faqs_menu') {
+            await handleFAQsMenu(from, text);
+            return;
+        }
+
+        // Default: AI Assistant mode
+        await sock.sendPresenceUpdate('composing', from);
+        const aiReply = await getGeminiReply(text);
+        await sock.sendMessage(from, { text: aiReply });
+        console.log(`[Chat] Replied to ${from}`);
     });
 }
 
