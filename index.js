@@ -169,7 +169,7 @@ SUPPORT: Available on the website chat`;
         const options = {
             hostname: 'generativelanguage.googleapis.com',
             port: 443,
-            path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+            path: `/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -201,7 +201,7 @@ SUPPORT: Available on the website chat`;
         
     } catch (error) {
         console.error("[Gemini Error]:", error);
-        return `[DEBUG ERROR]: ${error.toString()}. Please let me know what this says!`;
+        return "Hi! 👋 Thanks for reaching out to GKingtopup. Our AI is taking a short break. Please visit https://gkingtopup.com.ng or try again in a moment!";
     }
 }
 
