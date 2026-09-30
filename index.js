@@ -280,7 +280,8 @@ async function connectToWhatsApp () {
         const from = msg.key.remoteJid;
         const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
 
-        if (!text || from.includes('@g.us')) return; // Ignore empty or group messages
+        // Ignore empty messages, group chats, and WhatsApp status broadcasts
+        if (!text || from.includes('@g.us') || from.includes('status@broadcast') || from === 'status@broadcast') return;
 
         console.log(`[Chat] Received message from ${from}: ${text}`);
 
@@ -380,7 +381,7 @@ SUPPORT: Available on the website chat`;
         const options = {
             hostname: 'generativelanguage.googleapis.com',
             port: 443,
-            path: `/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`,
+            path: `/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -451,9 +452,27 @@ app.post('/api/send-whatsapp', (req, res) => {
     res.json({ success: true, message: 'Message queued for delivery.', queuePosition: messageQueue.length });
 });
 
+// ─── KEEP-ALIVE SELF-PING (prevents Render free tier from spinning down) ───
+const RENDER_URL = process.env.RENDER_EXTERNAL_URL; // Render sets this automatically
+function startKeepAlive() {
+    if (!RENDER_URL) {
+        console.log('[Keep-Alive] RENDER_EXTERNAL_URL not set, skipping self-ping.');
+        return;
+    }
+    setInterval(() => {
+        https.get(RENDER_URL, (res) => {
+            console.log(`[Keep-Alive] Pinged ${RENDER_URL} — Status: ${res.statusCode}`);
+        }).on('error', (err) => {
+            console.error('[Keep-Alive] Ping failed:', err.message);
+        });
+    }, 10 * 60 * 1000); // Every 10 minutes
+    console.log(`[Keep-Alive] Self-ping started. Pinging ${RENDER_URL} every 10 minutes.`);
+}
+
 // Start the server
 const PORT = process.env.PORT || 3005;
 app.listen(PORT, () => {
     console.log(`WhatsApp Microservice running on port ${PORT}`);
     connectToWhatsApp();
+    startKeepAlive();
 });
