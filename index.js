@@ -202,6 +202,8 @@ async function connectToAgent(from) {
 }
 
 
+// Queue system to prevent WhatsApp spam bans
+const messageQueue = [];
 let isProcessingQueue = false;
 
 async function processQueue() {
