@@ -1,9 +1,66 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, initAuthCreds, BufferJSON, proto } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const express = require('express');
 const cors = require('cors');
 const qrcode = require('qrcode-terminal');
 const https = require('https');
+const { MongoClient } = require('mongodb');
+
+// ─── MONGODB AUTH STATE (persists WhatsApp session across Render restarts) ───
+async function useMongoDBAuthState(mongoUri) {
+    const client = new MongoClient(mongoUri);
+    await client.connect();
+    const db = client.db('whatsapp_bot');
+    const credsCol = db.collection('creds');
+    const keysCol = db.collection('keys');
+
+    const credsDoc = await credsCol.findOne({ _id: 'creds' });
+    const creds = credsDoc
+        ? JSON.parse(JSON.stringify(credsDoc.data), BufferJSON.reviver)
+        : initAuthCreds();
+
+    const keys = {
+        get: async (type, ids) => {
+            const result = {};
+            await Promise.all(ids.map(async (id) => {
+                const doc = await keysCol.findOne({ _id: `${type}--${id}` });
+                if (doc) {
+                    let val = JSON.parse(JSON.stringify(doc.data), BufferJSON.reviver);
+                    if (type === 'app-state-sync-key' && val) {
+                        try { val = proto.Message.AppStateSyncKeyData.fromObject(val); } catch (_) {}
+                    }
+                    result[id] = val;
+                }
+            }));
+            return result;
+        },
+        set: async (data) => {
+            const ops = [];
+            for (const [type, ids] of Object.entries(data)) {
+                for (const [id, value] of Object.entries(ids)) {
+                    const docId = `${type}--${id}`;
+                    if (value) {
+                        ops.push({ updateOne: { filter: { _id: docId }, update: { $set: { data: JSON.parse(JSON.stringify(value, BufferJSON.replacer)) } }, upsert: true } });
+                    } else {
+                        ops.push({ deleteOne: { filter: { _id: docId } } });
+                    }
+                }
+            }
+            if (ops.length) await keysCol.bulkWrite(ops);
+        }
+    };
+
+    const saveCreds = async () => {
+        await credsCol.updateOne(
+            { _id: 'creds' },
+            { $set: { data: JSON.parse(JSON.stringify(creds, BufferJSON.replacer)) } },
+            { upsert: true }
+        );
+    };
+
+    console.log('[MongoDB] Auth state loaded successfully.');
+    return { state: { creds, keys }, saveCreds };
+}
 
 const app = express();
 app.use(express.json());
@@ -239,7 +296,20 @@ async function processQueue() {
 }
 
 async function connectToWhatsApp () {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    const MONGO_URI = process.env.MONGO_URI;
+    let state, saveCreds;
+
+    if (MONGO_URI) {
+        try {
+            ({ state, saveCreds } = await useMongoDBAuthState(MONGO_URI));
+        } catch (err) {
+            console.error('[MongoDB] Failed to connect, falling back to local files:', err.message);
+            ({ state, saveCreds } = await useMultiFileAuthState('auth_info_baileys'));
+        }
+    } else {
+        console.warn('[Auth] MONGO_URI not set. Using local files (sessions will NOT persist on Render!).');
+        ({ state, saveCreds } = await useMultiFileAuthState('auth_info_baileys'));
+    }
     
     sock = makeWASocket({
         auth: state,
