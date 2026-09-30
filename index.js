@@ -387,7 +387,7 @@ async function connectToWhatsApp () {
         
         await sock.sendPresenceUpdate('composing', from);
         const aiReply = await getGeminiReply(text);
-        await sock.sendMessage(from, { text: aiReply + '\n\n✨ _GKingtopup AI_' });
+        await sock.sendMessage(from, { text: aiReply + '\n\n✨ AI' });
         console.log(`[Chat] Replied to ${from} using AI`);
     });
 }
