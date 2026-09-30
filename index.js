@@ -508,6 +508,18 @@ app.post('/api/send-whatsapp', (req, res) => {
     res.json({ success: true, message: 'Message queued for delivery.', queuePosition: messageQueue.length });
 });
 
+// ─── TEMP ENDPOINT TO CHECK AVAILABLE GEMINI MODELS ───
+app.get('/models', async (req, res) => {
+    try {
+        const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ─── KEEP-ALIVE SELF-PING (prevents Render free tier from spinning down) ───
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL; // Render sets this automatically
 function startKeepAlive() {
